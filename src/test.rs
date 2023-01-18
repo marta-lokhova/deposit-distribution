@@ -121,11 +121,26 @@ impl DistributionTest {
     ) {
         self.contract.attend(attendee);
     }
+
+    fn approve_deposit(&self, amount: u32, user: AccountId) {
+        self.token
+            .with_source_account(&user)
+            .incr_allow(
+                &Signature::Invoker,
+                &0,
+                &Identifier::Contract(self.contract.contract_id.clone()),
+                &(amount as i128),
+            )
+    }
+
 }
 
 #[test]
 fn test_deposit_attend_and_claim() {
     let test = DistributionTest::setup();
+
+    test.approve_deposit(200, test.attendee_users[0].clone());
+    test.approve_deposit(200, test.attendee_users[1].clone());
 
     // has balance
     assert_eq!(
@@ -136,11 +151,53 @@ fn test_deposit_attend_and_claim() {
     test.deposit(
         &test.account_id_to_identifier(&test.attendee_users[0])
     );
+    test.deposit(
+        &test.account_id_to_identifier(&test.attendee_users[1])
+    );
 
-    // TODO: give distr accounts ebough balance
-    // assert_eq!(
-    //     test.token
-    //         .balance(&test.contract_id),
-    //     200
-    // );
+    // balance decreased
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[0])),
+        800
+    );
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[1])),
+        800
+    );
+
+    // User0 attends, but User1 doesn't
+    test.attend(
+        &test.account_id_to_identifier(&test.attendee_users[0])
+    );
+
+    // balance doesn't change
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[0])),
+        800
+    );
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[1])),
+        800
+    );
+
+    // withdraw, everything goes to User1
+    test.withdraw();
+
+    // balance doesn't change
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[0])),
+        1200
+    );
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[1])),
+        800
+    );
+
+
 }

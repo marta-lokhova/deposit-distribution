@@ -42,6 +42,8 @@ impl DistributionContract {
         e: Env,
         price: i128,
     ) {
+        let v = Vec::<Identifier>::new(&e);
+        e.storage().set(DataKey::Attendees, v);
         e.storage().set(DataKey::Price, price);
     }
 
@@ -77,9 +79,17 @@ impl DistributionContract {
     ) {
         let price = get_price(&env);
 
+        let token_client = token::Client::new(&env, token_id.clone());
+        let balance = token_client.balance(&get_contract_id(&env));
         let attendees: Vec<Identifier> = get_attendees(&env);
+        let distribution_amount = balance.checked_div(attendees.len() as i128).unwrap();
+        
+        // The remainder will be left in the contract, and can be claimed in the future once
+        // the balance increases.
+
+        assert!(distribution_amount >= price);
         for attendee in attendees {
-            transfer_from_contract_to_account(&env, &token_id, &attendee.unwrap(), &price);
+            transfer_from_contract_to_account(&env, &token_id, &attendee.unwrap(), &distribution_amount);
         }
     }
 }

@@ -145,12 +145,33 @@ fn test_unauthorized_attendance() {
 }
 
 #[test]
-#[should_panic(expected = "attendant already recorded")]
+#[should_panic(expected = "attendance already recorded")]
 fn test_attendee_added_twice() {
     let test = DistributionTest::setup();
 
+    test.approve_deposit(200, test.attendee_users[0].clone());
+
+    test.deposit(&test.account_id_to_identifier(&test.attendee_users[0].clone()));
     test.attend(&test.account_id_to_identifier(&test.attendee_users[0].clone()));
     test.attend(&test.account_id_to_identifier(&test.attendee_users[0].clone()));
+}
+
+#[test]
+#[should_panic(expected = "attendee did not register")]
+fn test_unregistered_attendee() {
+    let test = DistributionTest::setup();
+
+    test.attend(&test.account_id_to_identifier(&test.attendee_users[0].clone()));
+}
+
+#[test]
+#[should_panic(expected = "attendee already registered")]
+fn test_register_twice() {
+    let test = DistributionTest::setup();
+
+    test.approve_deposit(200, test.attendee_users[0].clone());
+    test.deposit(&test.account_id_to_identifier(&test.attendee_users[0].clone()));
+    test.deposit(&test.account_id_to_identifier(&test.attendee_users[0].clone()));
 }
 
 #[test]

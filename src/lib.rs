@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contractimpl, contracttype, BytesN, Env, Vec};
+use soroban_sdk::{contractimpl, contracttype, BytesN, Env, Map};
 
 mod token {
     soroban_sdk::contractimport!(file = "soroban_token_spec.wasm");
@@ -11,7 +11,8 @@ use token::{Identifier, Signature};
 #[derive(Clone)]
 #[contracttype]
 pub struct Attendee {
-    pub fee: u64,
+    pub id: Identifier,
+    pub fee: i128,
     pub attended: bool,
 }
 
@@ -27,7 +28,7 @@ pub enum DataKey {
 
 pub struct DistributionContract;
 
-fn get_attendees(e: &Env) -> Vec<Identifier> {
+fn get_attendees(e: &Env) -> Map<Identifier, Attendee> {
     e.storage().get_unchecked(DataKey::Attendees).unwrap()
 }
 
@@ -75,7 +76,7 @@ impl DistributionContract {
 
         write_administrator(&e, admin);
 
-        let v = Vec::<Identifier>::new(&e);
+        let v = Map::<Identifier, Attendee>::new(&e);
         e.storage().set(DataKey::Attendees, v);
         e.storage().set(DataKey::Price, price);
         e.storage().set(DataKey::Token, token);
@@ -89,6 +90,18 @@ impl DistributionContract {
     ) {
         let price = get_price(&env);
         let token = get_token(&env);
+
+        let mut attendees = get_attendees(&env);
+
+        if attendees.contains_key(attendee.clone()) {
+            panic!("attendee already registered");
+        }
+
+        let attendee_struct = Attendee{id: attendee.clone(), fee: price, attended: false};
+        attendees.set(attendee.clone(), attendee_struct);
+
+        env.storage().set(DataKey::Attendees, attendees);
+
         // Transfer token to this contract address.
         transfer_from_account_to_contract(&env, &token, &attendee.into(), &price);
     }
@@ -100,17 +113,21 @@ impl DistributionContract {
         check_admin(&env, &env.invoker().into());
 
         // Store actual attendees on chain
-        let mut attendees: Vec<Identifier> = get_attendees(&env);
+        let mut attendees = get_attendees(&env);
 
-        if attendees.contains(&attendee) {
-            panic!("attendant already recorded");
+        if !attendees.contains_key(attendee.clone()) {
+            panic!("attendee did not register");
         }
 
-        attendees.push_back(attendee);
-        env.storage().set(
-            DataKey::Attendees,
-            attendees
-        )
+        let mut attendee_struct = attendees.get_unchecked(attendee.clone()).unwrap();
+
+        if attendee_struct.attended
+        {
+            panic!("attendance already recorded")
+        } 
+        attendee_struct.attended = true;
+        attendees.set(attendee, attendee_struct);
+        env.storage().set(DataKey::Attendees, attendees);
     }
 
     // Distribute the money to everyone
@@ -124,15 +141,26 @@ impl DistributionContract {
 
         let token_client = token::Client::new(&env, token.clone());
         let balance = token_client.balance(&get_contract_id(&env));
-        let attendees: Vec<Identifier> = get_attendees(&env);
+        let mut attendees = get_attendees(&env);
+        for (id, attendee_struct) in attendees.iter_unchecked()
+        {
+            if !attendee_struct.attended
+            {
+                attendees.remove(id);
+            }
+        }
+
         let distribution_amount = balance.checked_div(attendees.len() as i128).unwrap();
         
         // The remainder will be left in the contract, and can be claimed in the future once
         // the balance increases.
 
         assert!(distribution_amount >= price);
-        for attendee in attendees {
-            transfer_from_contract_to_account(&env, &token, &attendee.unwrap(), &distribution_amount);
+        for (id, attendee_struct) in attendees.iter_unchecked() {
+            if attendee_struct.attended
+            {
+                transfer_from_contract_to_account(&env, &token, &id, &distribution_amount);
+            }
         }
     }
 }

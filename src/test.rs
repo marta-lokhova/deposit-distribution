@@ -25,9 +25,9 @@ fn create_token_contract(e: &Env, admin: &AccountId) -> (BytesN<32>, TokenClient
     (id, token)
 }
 
-fn create_distribution_contract(e: &Env, admin: &AccountId) -> DistributionContractClient {
+fn create_distribution_contract(e: &Env, admin: &AccountId, token: BytesN<32>) -> DistributionContractClient {
     let distr = DistributionContractClient::new(e, e.register_contract(None, DistributionContract {}));
-    distr.initialize(&Identifier::Account(admin.clone()), &200);
+    distr.initialize(&Identifier::Account(admin.clone()), &200, &token);
     distr
 }
 
@@ -35,7 +35,6 @@ struct DistributionTest {
     token_admin: AccountId,
     attendee_users: [AccountId; 3],
     token: TokenClient,
-    token_id: BytesN<32>,
     contract: DistributionContractClient,
 }
 
@@ -69,20 +68,17 @@ impl DistributionTest {
             );
         }
 
-        let contract = create_distribution_contract(&env, &token_admin);
+        let contract = create_distribution_contract(&env, &token_admin, token_id);
         DistributionTest {
             token_admin,
             attendee_users,
             token,
-            token_id,
             contract,
         }
     }
 
     fn deposit(&self, attendee: &Identifier) {
-        self.call_deposit(
-            &self.token_id, &attendee
-        );
+        self.call_deposit(&attendee);
     }
 
     fn attend(&self, attendee: &Identifier) {
@@ -90,15 +86,14 @@ impl DistributionTest {
     }
 
     fn withdraw(&self) {
-        self.call_withdraw(self.token_id.clone());
+        self.call_withdraw();
     }
 
     fn call_deposit(
         &self,
-        token: &BytesN<32>,
         attendee: &Identifier,
     ) {
-        self.contract.deposit(token, attendee);
+        self.contract.deposit(attendee);
     }
 
     fn account_id_to_identifier(&self, account_id: &AccountId) -> Identifier {
@@ -106,10 +101,9 @@ impl DistributionTest {
     }
 
     fn call_withdraw(
-        &self,
-        token_id: BytesN<32>
+        &self
     ) {
-        self.contract.with_source_account(&self.token_admin).withdraw(&token_id);
+        self.contract.with_source_account(&self.token_admin).withdraw();
     }
 
     fn call_attend(
@@ -138,7 +132,7 @@ fn test_unauthorized_withdrawal() {
     let test = DistributionTest::setup();
 
     // Attendee can't trigger withdrawal
-    test.contract.with_source_account(&test.attendee_users[0].clone()).withdraw(&test.token_id);
+    test.contract.with_source_account(&test.attendee_users[0].clone()).withdraw();
 }
 
 #[test]
@@ -146,8 +140,17 @@ fn test_unauthorized_withdrawal() {
 fn test_unauthorized_attendance() {
     let test = DistributionTest::setup();
 
-    // Attendee can't trigger withdrawal
+    // Attendee can't trigger attendance counting
     test.contract.with_source_account(&test.attendee_users[0].clone()).attend(&test.account_id_to_identifier(&test.attendee_users[0].clone()));
+}
+
+#[test]
+#[should_panic(expected = "attendant already recorded")]
+fn test_attendee_added_twice() {
+    let test = DistributionTest::setup();
+
+    test.attend(&test.account_id_to_identifier(&test.attendee_users[0].clone()));
+    test.attend(&test.account_id_to_identifier(&test.attendee_users[0].clone()));
 }
 
 #[test]

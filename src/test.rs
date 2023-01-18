@@ -2,7 +2,7 @@
 
 use super::*;
 use soroban_sdk::testutils::{Accounts, Ledger, LedgerInfo};
-use soroban_sdk::{vec, AccountId, Env, IntoVal};
+use soroban_sdk::{AccountId, Env, IntoVal};
 
 soroban_sdk::contractimport!(
     file = "target/wasm32-unknown-unknown/release/soroban_token_contract.wasm"
@@ -25,19 +25,18 @@ fn create_token_contract(e: &Env, admin: &AccountId) -> (BytesN<32>, TokenClient
     (id, token)
 }
 
-fn create_distribution_contract(e: &Env) -> DistributionContractClient {
+fn create_distribution_contract(e: &Env, admin: &AccountId) -> DistributionContractClient {
     let distr = DistributionContractClient::new(e, e.register_contract(None, DistributionContract {}));
-    distr.initialize(&200);
+    distr.initialize(&Identifier::Account(admin.clone()), &200);
     distr
 }
 
 struct DistributionTest {
-    env: Env,
+    token_admin: AccountId,
     attendee_users: [AccountId; 3],
     token: TokenClient,
     token_id: BytesN<32>,
     contract: DistributionContractClient,
-    contract_id: Identifier,
 }
 
 impl DistributionTest {
@@ -70,15 +69,13 @@ impl DistributionTest {
             );
         }
 
-        let contract = create_distribution_contract(&env);
-        let contract_id = Identifier::Contract(contract.contract_id.clone());
+        let contract = create_distribution_contract(&env, &token_admin);
         DistributionTest {
-            env,
+            token_admin,
             attendee_users,
             token,
             token_id,
             contract,
-            contract_id,
         }
     }
 
@@ -112,14 +109,14 @@ impl DistributionTest {
         &self,
         token_id: BytesN<32>
     ) {
-        self.contract.withdraw(&token_id);
+        self.contract.with_source_account(&self.token_admin).withdraw(&token_id);
     }
 
     fn call_attend(
         &self,
         attendee: &Identifier
     ) {
-        self.contract.attend(attendee);
+        self.contract.with_source_account(&self.token_admin).attend(attendee);
     }
 
     fn approve_deposit(&self, amount: u32, user: AccountId) {
@@ -133,6 +130,24 @@ impl DistributionTest {
             )
     }
 
+}
+
+#[test]
+#[should_panic(expected = "not authorized by admin")]
+fn test_unauthorized_withdrawal() {
+    let test = DistributionTest::setup();
+
+    // Attendee can't trigger withdrawal
+    test.contract.with_source_account(&test.attendee_users[0].clone()).withdraw(&test.token_id);
+}
+
+#[test]
+#[should_panic(expected = "not authorized by admin")]
+fn test_unauthorized_attendance() {
+    let test = DistributionTest::setup();
+
+    // Attendee can't trigger withdrawal
+    test.contract.with_source_account(&test.attendee_users[0].clone()).attend(&test.account_id_to_identifier(&test.attendee_users[0].clone()));
 }
 
 #[test]

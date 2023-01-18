@@ -15,7 +15,6 @@ mod token {
 use token::{Identifier, Signature};
 
 // TODO: audit get, get_unchecked, need to ensure errors are handled gracefully
-// TODO: add admin
 // TODO: add pricing tiers (can be set by admin)
 #[derive(Clone)]
 #[contracttype]
@@ -35,13 +34,41 @@ fn get_price(e: &Env) -> i128 {
     e.storage().get_unchecked(DataKey::Price).unwrap()
 }
 
+fn has_administrator(e: &Env) -> bool {
+    let key = DataKey::Admin;
+    e.storage().has(key)
+}
+
+fn read_administrator(e: &Env) -> Identifier {
+    let key = DataKey::Admin;
+    e.storage().get_unchecked(key).unwrap()
+}
+
+fn write_administrator(e: &Env, id: Identifier) {
+    let key = DataKey::Admin;
+    e.storage().set(key, id);
+}
+
+pub fn check_admin(e: &Env, auth_id: &Identifier) {
+    if *auth_id != read_administrator(e) {
+        panic!("not authorized by admin")
+    }
+}
+
 #[contractimpl]
 impl DistributionContract {
 
     pub fn initialize(
         e: Env,
+        admin: Identifier,
         price: i128,
     ) {
+        if has_administrator(&e) {
+            panic!("admin is already set");
+        }
+
+        write_administrator(&e, admin);
+
         let v = Vec::<Identifier>::new(&e);
         e.storage().set(DataKey::Attendees, v);
         e.storage().set(DataKey::Price, price);
@@ -63,6 +90,8 @@ impl DistributionContract {
         env: Env,
         attendee: Identifier
     ) {
+        check_admin(&env, &env.invoker().into());
+
         // Store actual attendees on chain
         let mut attendees: Vec<Identifier> = get_attendees(&env);
         attendees.push_back(attendee);
@@ -77,6 +106,8 @@ impl DistributionContract {
         env: Env,
         token_id: BytesN<32>
     ) {
+        check_admin(&env, &env.invoker().into());
+
         let price = get_price(&env);
 
         let token_client = token::Client::new(&env, token_id.clone());

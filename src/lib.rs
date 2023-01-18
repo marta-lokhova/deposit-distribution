@@ -9,7 +9,7 @@
 use soroban_sdk::{contractimpl, contracttype, BytesN, Env, Vec};
 
 mod token {
-    soroban_sdk::contractimport!(file = "../soroban_token_spec.wasm");
+    soroban_sdk::contractimport!(file = "soroban_token_spec.wasm");
 }
 
 use token::{Identifier, Signature};

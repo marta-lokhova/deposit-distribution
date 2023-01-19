@@ -68,6 +68,13 @@ impl DistributionTest {
             );
         }
 
+        token.with_source_account(&token_admin).mint(
+            &Signature::Invoker,
+            &0,
+            &Identifier::Account(token_admin.clone()),
+            &1000,
+        );
+
         let contract = create_distribution_contract(&env, &token_admin, token_id);
         DistributionTest {
             token_admin,
@@ -154,6 +161,20 @@ fn test_attendee_added_twice() {
     test.deposit(&test.account_id_to_identifier(&test.attendee_users[0].clone()));
     test.attend(&test.account_id_to_identifier(&test.attendee_users[0].clone()));
     test.attend(&test.account_id_to_identifier(&test.attendee_users[0].clone()));
+}
+
+#[test]
+#[should_panic(expected = "admin cannot deposit")]
+fn test_admin_deposits() {
+    let test = DistributionTest::setup();
+    test.deposit(&test.account_id_to_identifier(&test.token_admin));
+}
+
+#[test]
+#[should_panic(expected = "admin cannot attend")]
+fn test_admin_attends() {
+    let test = DistributionTest::setup();
+    test.attend(&test.account_id_to_identifier(&test.token_admin));
 }
 
 #[test]

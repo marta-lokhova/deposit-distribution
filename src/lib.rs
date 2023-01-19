@@ -82,12 +82,15 @@ impl DistributionContract {
         e.storage().set(DataKey::Token, token);
     }
 
-     // Need to store depositors 
-     // Can't pay twice 
     pub fn deposit(
         env: Env,
         attendee: Identifier
     ) {
+        if attendee == read_administrator(&env)
+        {
+            panic!("admin cannot deposit")
+        }
+
         let price = get_price(&env);
         let token = get_token(&env);
 
@@ -111,6 +114,10 @@ impl DistributionContract {
         attendee: Identifier
     ) {
         check_admin(&env, &env.invoker().into());
+        if attendee == read_administrator(&env)
+        {
+            panic!("admin cannot attend")
+        }
 
         // Store actual attendees on chain
         let mut attendees = get_attendees(&env);

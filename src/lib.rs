@@ -162,7 +162,7 @@ impl DistributionContract {
         env: Env,
         high: u32,
         low: u32,
-    ) {
+    ) -> i32 {
         // TODO; once withdrawal started, deposit and attend should not be allowed
         check_admin(&env, &env.invoker().into());
 
@@ -180,6 +180,7 @@ impl DistributionContract {
         
         // The remainder will be left in the contract, and can be claimed in the future once
         // the balance increases.
+        let mut refund_count = 0;
         for id in low..high {
             if !env.storage().has(id)
             {
@@ -194,8 +195,10 @@ impl DistributionContract {
                 transfer_from_contract_to_account(&env, &token, &att, &distribution_amount);
                 att_struct.refunded = true;
                 env.storage().set(att, att_struct);
+                refund_count += 1
             }
         }
+        refund_count
     }
 }
 

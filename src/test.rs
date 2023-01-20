@@ -92,8 +92,8 @@ impl DistributionTest {
         self.call_attend(attendee);
     }
 
-    fn withdraw(&self, high: u32, low: u32) {
-        self.call_withdraw(high, low);
+    fn withdraw(&self, high: u32, low: u32) -> i32 {
+        self.call_withdraw(high, low)
     }
 
     fn call_deposit(
@@ -109,8 +109,8 @@ impl DistributionTest {
 
     fn call_withdraw(
         &self, high: u32, low: u32
-    ) {
-        self.contract.with_source_account(&self.token_admin).withdraw(&high, &low);
+    ) -> i32 {
+        self.contract.with_source_account(&self.token_admin).withdraw(&high, &low)
     }
 
     fn call_attend(
@@ -303,7 +303,7 @@ fn test_batched_withdrawal() {
     );
 
     // withdraw, everything goes to User1
-    test.withdraw(1, 0);
+    assert_eq!(test.withdraw(1, 0), 1);
 
     // balance doesn't change
     assert_eq!(
@@ -324,7 +324,7 @@ fn test_batched_withdrawal() {
     );
 
     // Second time withdraw should have no effect
-    test.withdraw(2, 0);
+    assert_eq!(test.withdraw(2, 0), 1);
 
     // balance doesn't change
     assert_eq!(
@@ -344,8 +344,8 @@ fn test_batched_withdrawal() {
         1100
     );
 
-    // Third wirhdrawal has no effect
-    test.withdraw(2, 0);
+    // Third withdrawal has no effect
+    assert_eq!(test.withdraw(2, 0), 0);
 
     // balance doesn't change
     assert_eq!(

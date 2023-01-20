@@ -92,8 +92,8 @@ impl DistributionTest {
         self.call_attend(attendee);
     }
 
-    fn withdraw(&self) {
-        self.call_withdraw();
+    fn withdraw(&self, high: u32, low: u32) {
+        self.call_withdraw(high, low);
     }
 
     fn call_deposit(
@@ -108,9 +108,9 @@ impl DistributionTest {
     }
 
     fn call_withdraw(
-        &self
+        &self, high: u32, low: u32
     ) {
-        self.contract.with_source_account(&self.token_admin).withdraw();
+        self.contract.with_source_account(&self.token_admin).withdraw(&high, &low);
     }
 
     fn call_attend(
@@ -139,7 +139,7 @@ fn test_unauthorized_withdrawal() {
     let test = DistributionTest::setup();
 
     // Attendee can't trigger withdrawal
-    test.contract.with_source_account(&test.attendee_users[0].clone()).withdraw();
+    test.contract.with_source_account(&test.attendee_users[0].clone()).withdraw(&5, &0);
 }
 
 #[test]
@@ -245,7 +245,7 @@ fn test_deposit_attend_and_claim() {
     );
 
     // withdraw, everything goes to User1
-    test.withdraw();
+    test.withdraw(5, 0);
 
     // balance doesn't change
     assert_eq!(
@@ -259,5 +259,110 @@ fn test_deposit_attend_and_claim() {
         800
     );
 
+    // Second time withdraw should have no effect
+    test.withdraw(5, 0);
+
+    // balance doesn't change
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[0])),
+        1200
+    );
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[1])),
+        800
+    );
+
+}
+
+#[test]
+fn test_batched_withdrawal() {
+    let test = DistributionTest::setup();
+
+    test.approve_deposit(200, test.attendee_users[0].clone());
+    test.approve_deposit(200, test.attendee_users[1].clone());
+    test.approve_deposit(200, test.attendee_users[2].clone());
+
+    test.deposit(
+        &test.account_id_to_identifier(&test.attendee_users[0])
+    );
+    test.deposit(
+        &test.account_id_to_identifier(&test.attendee_users[1])
+    );
+    test.deposit(
+        &test.account_id_to_identifier(&test.attendee_users[2])
+    );
+
+    // two attend
+    test.attend(
+        &test.account_id_to_identifier(&test.attendee_users[0])
+    );
+    test.attend(
+        &test.account_id_to_identifier(&test.attendee_users[2])
+    );
+
+    // withdraw, everything goes to User1
+    test.withdraw(1, 0);
+
+    // balance doesn't change
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[0])),
+        1100
+    );
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[1])),
+        800
+    );
+    // Haven't withdrawn for the third user
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[2])),
+        800
+    );
+
+    // Second time withdraw should have no effect
+    test.withdraw(2, 0);
+
+    // balance doesn't change
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[0])),
+        1100
+    );
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[1])),
+        800
+    );
+    // Haven't withdrawn for the third user
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[2])),
+        1100
+    );
+
+    // Third wirhdrawal has no effect
+    test.withdraw(2, 0);
+
+    // balance doesn't change
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[0])),
+        1100
+    );
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[1])),
+        800
+    );
+    // Haven't withdrawn for the third user
+    assert_eq!(
+        test.token
+        .balance(&test.account_id_to_identifier(&test.attendee_users[2])),
+        1100
+    );
 
 }

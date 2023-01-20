@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contractimpl, contracttype, BytesN, Env, Map};
+use soroban_sdk::{contractimpl, contracttype, BytesN, Env};
 
 mod token {
     soroban_sdk::contractimport!(file = "soroban_token_spec.wasm");
@@ -11,9 +11,9 @@ use token::{Identifier, Signature};
 #[derive(Clone)]
 #[contracttype]
 pub struct Attendee {
-    pub id: Identifier,
     pub fee: i128,
     pub attended: bool,
+    pub refunded: bool
 }
 
 // TODO: add pricing tiers (can be set by admin)
@@ -21,16 +21,14 @@ pub struct Attendee {
 #[contracttype]
 pub enum DataKey {
     Admin,
-    Attendees,
+    Attendee,
+    Count,
+    Unclaimed,
     Price,
     Token
 }
 
 pub struct DistributionContract;
-
-fn get_attendees(e: &Env) -> Map<Identifier, Attendee> {
-    e.storage().get_unchecked(DataKey::Attendees).unwrap()
-}
 
 fn get_price(e: &Env) -> i128 {
     e.storage().get_unchecked(DataKey::Price).unwrap()
@@ -38,6 +36,14 @@ fn get_price(e: &Env) -> i128 {
 
 fn get_token(e: &Env) -> BytesN<32> {
     e.storage().get_unchecked(DataKey::Token).unwrap()
+}
+
+fn get_count(e: &Env) -> u32 {
+    e.storage().get_unchecked(DataKey::Count).unwrap()
+}
+
+fn get_unclaimed(e: &Env) -> i128 {
+    e.storage().get_unchecked(DataKey::Unclaimed).unwrap()
 }
 
 fn has_administrator(e: &Env) -> bool {
@@ -76,10 +82,10 @@ impl DistributionContract {
 
         write_administrator(&e, admin);
 
-        let v = Map::<Identifier, Attendee>::new(&e);
-        e.storage().set(DataKey::Attendees, v);
         e.storage().set(DataKey::Price, price);
         e.storage().set(DataKey::Token, token);
+        e.storage().set(DataKey::Unclaimed, 0 as i128);
+        e.storage().set(DataKey::Count, 0 as u32);
     }
 
     pub fn deposit(
@@ -94,16 +100,16 @@ impl DistributionContract {
         let price = get_price(&env);
         let token = get_token(&env);
 
-        let mut attendees = get_attendees(&env);
-
-        if attendees.contains_key(attendee.clone()) {
+        if env.storage().has(attendee.clone()) {
             panic!("attendee already registered");
         }
 
-        let attendee_struct = Attendee{id: attendee.clone(), fee: price, attended: false};
-        attendees.set(attendee.clone(), attendee_struct);
+        let attendee_struct = Attendee{fee: price, attended: false, refunded: false};
+        env.storage().set(&attendee, attendee_struct);
 
-        env.storage().set(DataKey::Attendees, attendees);
+        let mut unclaimed: i128 = get_unclaimed(&env);
+        unclaimed += price;
+        env.storage().set(DataKey::Unclaimed, unclaimed);
 
         // Transfer token to this contract address.
         transfer_from_account_to_contract(&env, &token, &attendee.into(), &price);
@@ -119,54 +125,75 @@ impl DistributionContract {
             panic!("admin cannot attend")
         }
 
-        // Store actual attendees on chain
-        let mut attendees = get_attendees(&env);
-
-        if !attendees.contains_key(attendee.clone()) {
+        if !env.storage().has(attendee.clone()) {
             panic!("attendee did not register");
         }
 
-        let mut attendee_struct = attendees.get_unchecked(attendee.clone()).unwrap();
+        let mut stored_att : Attendee = env.storage().get_unchecked(attendee.clone()).unwrap();
 
-        if attendee_struct.attended
+        if stored_att.attended
         {
             panic!("attendance already recorded")
         } 
-        attendee_struct.attended = true;
-        attendees.set(attendee, attendee_struct);
-        env.storage().set(DataKey::Attendees, attendees);
+
+        stored_att.attended = true;
+        env.storage().set(&attendee, stored_att);
+
+        // Store withdrawal ID
+        let mut count: u32 = get_count(&env);
+        env.storage().set(count, attendee);
+
+        // Increment and save the count.
+        count += 1;
+        env.storage().set(DataKey::Count, &count);
+
+        // Decrement unclaimed 
+        let mut unclaimed: i128 = get_unclaimed(&env);
+        let price = get_price(&env);
+
+        // Decrement and save unclaimed
+        unclaimed -= price;
+        env.storage().set(DataKey::Unclaimed, unclaimed);
+
     }
 
-    // Distribute the money to everyone
+    // Distribute the money to a batch of attendees
     pub fn withdraw(
         env: Env,
+        high: u32,
+        low: u32,
     ) {
+        // TODO; once withdrawal started, deposit and attend should not be allowed
         check_admin(&env, &env.invoker().into());
+
+        if high < low || high - low > 10
+        {
+            panic!("Invalid range")
+        }
 
         let price = get_price(&env);
         let token = get_token(&env);
+        let withdrawal_count = get_count(&env);
+        let unclaimed = get_unclaimed(&env);
 
-        let token_client = token::Client::new(&env, token.clone());
-        let balance = token_client.balance(&get_contract_id(&env));
-        let mut attendees = get_attendees(&env);
-        for (id, attendee_struct) in attendees.iter_unchecked()
-        {
-            if !attendee_struct.attended
-            {
-                attendees.remove(id);
-            }
-        }
-
-        let distribution_amount = balance.checked_div(attendees.len() as i128).unwrap();
+        let distribution_amount = price + unclaimed.checked_div(withdrawal_count as i128).unwrap();
         
         // The remainder will be left in the contract, and can be claimed in the future once
         // the balance increases.
-
-        assert!(distribution_amount >= price);
-        for (id, attendee_struct) in attendees.iter_unchecked() {
-            if attendee_struct.attended
+        for id in low..high {
+            if !env.storage().has(id)
             {
-                transfer_from_contract_to_account(&env, &token, &id, &distribution_amount);
+                continue;
+            }
+
+            let att : Identifier = env.storage().get_unchecked(id).unwrap();
+            let mut att_struct : Attendee = env.storage().get_unchecked(&att).unwrap();
+
+            if !att_struct.refunded
+            {
+                transfer_from_contract_to_account(&env, &token, &att, &distribution_amount);
+                att_struct.refunded = true;
+                env.storage().set(att, att_struct);
             }
         }
     }

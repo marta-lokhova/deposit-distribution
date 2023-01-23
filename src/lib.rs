@@ -163,9 +163,10 @@ impl DistributionContract {
         high: u32,
         low: u32,
     ) -> i32 {
-        // TODO; once withdrawal started, deposit and attend should not be allowed
+        // TODO: once withdrawal started, deposit and attend should not be allowed
         check_admin(&env, &env.invoker().into());
 
+        // Each function call is limited in resources, so we limit how many attendees can receive funds in one call
         if high < low || high - low > 10
         {
             panic!("Invalid range")
@@ -178,8 +179,7 @@ impl DistributionContract {
 
         let distribution_amount = price + unclaimed.checked_div(withdrawal_count as i128).unwrap();
         
-        // The remainder will be left in the contract, and can be claimed in the future once
-        // the balance increases.
+        // TODO: currently, the remainder is left in the contract without an option to withdraw
         let mut refund_count = 0;
         for id in low..high {
             if !env.storage().has(id)
